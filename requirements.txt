@@ -1,0 +1,8 @@
+torch==2.0.1
+onnx==1.15.0
+numpy==1.26.2
+onnxruntime==1.16.1
+onnx-tf==1.10.0
+tensorflow==2.14.0
+tensorflow-probability==0.22.1
+onnx2keras @ git+https://github.com/UncleBen420/onnx2keras.git
