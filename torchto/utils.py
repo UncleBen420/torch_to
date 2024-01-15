@@ -13,6 +13,15 @@ import onnx
 import numpy as np
 import onnxruntime as ort
 import tensorflow as tf
+import torch
+
+def check_model_type(model):
+    if isinstance(model, torch.nn.Module):
+        return "PyTorch"
+    elif isinstance(model, onnx.ModelProto):
+        return "ONNX"
+    else:
+        raise ValueError("Unknown model type.")
 
 def keras_infer(k_model, inputs):
     """

@@ -28,8 +28,8 @@ class Converter():
     def __init__(self,
                  conv_type,
                  dummy_input,
-                 calibration_dataloader=None,
-                 calibration_length=100,
+                 calibration_samples=None,
+                 calibration_labels=None,
                  onnx_opset_version=12,
                  onnx_input_name='input',
                  onnx_output_name='output',
@@ -41,8 +41,8 @@ class Converter():
         Parameters:
         - conv_type (str): Conversion type, one of ['ONNX', 'TFLITE', 'TFLITE_UINT8', 'KERAS', 'EDGE_TPU'].
         - dummy_input (torch.Tensor): Dummy input tensor for the model (having the correct image shape and batch size of 1).
-        - calibration_dataloader (torch.utils.data.DataLoader, optional): DataLoader for calibration data (required for quantization).
-        - calibration_length (int, optional): Number of calibration data points to use.
+        - calibration_samples (numpy.array, optional): sample for calibration (required for quantization).
+        - calibration_labels (numpy.array, optional): label for calibration (required for quantization).
         - onnx_opset_version (int, optional): ONNX opset version for exporting the ONNX model.
         - onnx_input_name (str, optional): Input name for the ONNX model.
         - onnx_output_name (str, optional): Output name for the ONNX model.
@@ -53,7 +53,7 @@ class Converter():
             raise ValueError(f"Unsupported conversion type: {conv_type}. Supported types are ['ONNX', 'TFLITE', 'TFLITE_UINT8', 'KERAS', 'EDGE_TPU']")
 
         # Validate calibration data for certain conversion types that require quantization.
-        if conv_type in ['TFLITE_UINT8', 'EDGE_TPU'] and calibration_dataloader is None:
+        if conv_type in ['TFLITE_UINT8', 'EDGE_TPU'] and (calibration_samples is None or calibration_labels is None):
             raise ValueError("Quantization requires a calibration data loader. Please provide a valid calibration_dataloader.")
 
         # Initialize class attributes.
@@ -63,21 +63,10 @@ class Converter():
         self.onnx_input_name = onnx_input_name
         self.onnx_output_name = onnx_output_name
         self.verbose = verbose
-        self.calibration_length = calibration_length
-
-        # Prepare calibration data if available.
-        if calibration_dataloader is not None:
-            cal_ds = []
-            cal_lbl = []
-            for batch in calibration_dataloader:
-                if len(cal_lbl) > calibration_length:
-                    break
-                images, labels = batch
-                cal_ds.extend(images.cpu().numpy().tolist())
-                cal_lbl.extend(labels.cpu().numpy().tolist())
-
-            self.calibration_dataset = np.array(cal_ds, dtype=np.float32)[:calibration_length]
-            self.calibration_labels = np.expand_dims(np.array(cal_lbl)[:calibration_length], axis=1)
+        self.calibration_length = len(calibration_samples)
+        self.calibration_dataset = calibration_samples
+        self.calibration_labels = calibration_labels
+      
 
     def __call__(self, model, dir='converted_model', name='model', test_conversion=True):
         """
@@ -93,9 +82,14 @@ class Converter():
         - converted_model: The converted model.
         - is_ok (bool): A flag indicating whether the conversion was successful.
         """
-        # Ensure the model is in evaluation mode on the CPU.
-        model.eval().cpu()
         is_ok = True
+        input_model_type = check_model_type(model)
+        if input_model_type == 'PyTorch':
+            # Ensure the model is in evaluation mode on the CPU.
+            model.eval().cpu()
+
+        if input_model_type == self.conv_type:
+            return model, True
 
         # Create the working directory if it doesn't exist.
         if not os.path.exists(dir):
@@ -108,9 +102,11 @@ class Converter():
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
         # Convert the model based on the specified conversion type.
-        if self.conv_type in ['ONNX', 'TFLITE', 'TFLITE_UINT8', 'KERAS', 'EDGE_TPU']:
+        if input_model_type == 'PyTorch':
             converted_model, conversion_success = self.from_torch_2_onnx(model, dir=dir, name=name, test_conversion=test_conversion)
             is_ok *= conversion_success
+        else:
+            converted_model = model
 
         if self.conv_type in ['TFLITE']:
             converted_model, conversion_success = self.from_onnx_2_tflite(converted_model, dir=dir, name=name, test_conversion=test_conversion)
