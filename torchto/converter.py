@@ -105,7 +105,8 @@ class Converter():
         if input_model_type == 'PyTorch':
             converted_model, conversion_success = self.from_torch_2_onnx(model, dir=dir, name=name, test_conversion=test_conversion)
             is_ok *= conversion_success
-        else:
+        elif input_model_type == 'ONNX':
+            onnx.save(model, os.path.join(dir, name + '.onnx'))
             converted_model = model
 
         if self.conv_type in ['TFLITE']:
